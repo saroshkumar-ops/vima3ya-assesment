@@ -1,0 +1,14 @@
+# Never commit datasets, base model weights, or temporary training checkpoints
+data/
+work_data/
+*.jsonl
+!predictions_test.jsonl
+outputs/
+checkpoints/
+results_bundle.json
+error_analysis_failures.json
+wandb/
+.ipynb_checkpoints/
+__pycache__/
+*.pyc
+.DS_Store
