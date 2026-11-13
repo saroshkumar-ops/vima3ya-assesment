@@ -8,7 +8,7 @@ os.environ["HF_HOME"] = r"E:\hf_cache"
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 from peft import PeftModel
 
-BASE_MODEL_ID = "Qwen/Qwen2.5-3B-Instruct"
+BASE_MODEL_ID = r"E:\hf_models\Qwen2.5-3B-Instruct"
 ADAPTER_PATH = r"E:\ai-job-search\applications\vima3ya\Assesment\submission\adapter"
 TEST_INPUTS_PATH = r"E:\ai-job-search\applications\vima3ya\Assesment\training_assessment\candidate_pack\data\test_inputs.jsonl"
 OUTPUT_PREDS_PATH = r"E:\ai-job-search\applications\vima3ya\Assesment\submission\predictions_test.jsonl"
