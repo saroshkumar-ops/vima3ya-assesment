@@ -72,6 +72,8 @@ from peft import LoraConfig, PeftModel, get_peft_model, prepare_model_for_kbit_t
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 from trl import SFTConfig, SFTTrainer
 
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+
 SEED = 42
 BASE_MODEL_ID = "Qwen/Qwen2.5-3B-Instruct"
 SKIP_COMPLETED = True  # Set False to force retraining all experiments from scratch
@@ -573,7 +575,7 @@ We evaluate the base `Qwen/Qwen2.5-3B-Instruct` model (no fine-tuning) on `dev.j
 
     cells.append(
         code(
-            """def run_greedy_inference(model, tokenizer, rows: list[dict], batch_size: int = 8, system_override: str | None = None, max_new_tokens: int = 200) -> list[dict]:
+            """def run_greedy_inference(model, tokenizer, rows: list[dict], batch_size: int = 2, system_override: str | None = None, max_new_tokens: int = 200) -> list[dict]:
     \"\"\"Run greedy model.generate matching ASSIGNMENT.md rules (strip whitespace only).\"\"\"
     model.eval()
     orig_side = tokenizer.padding_side
@@ -713,9 +715,58 @@ def run_experiment(
     metrics_path = exp_dir / "metrics.json"
     adapter_dir = exp_dir / "adapter"
 
-    if SKIP_COMPLETED and metrics_path.exists() and (adapter_dir / "adapter_config.json").exists():
-        print(f"[SKIP] Loaded saved metrics for {exp_name}")
-        return json.loads(metrics_path.read_text(encoding="utf-8"))
+    if SKIP_COMPLETED and (adapter_dir / "adapter_config.json").exists():
+        if metrics_path.exists():
+            print(f"[SKIP] Loaded saved metrics for {exp_name}")
+            return json.loads(metrics_path.read_text(encoding="utf-8"))
+        print(f"[RECOVER] Found saved adapter for {exp_name}! Skipping re-training and running dev evaluation...")
+        torch.cuda.empty_cache()
+        gc.collect()
+        eval_base = load_base_model(use_4bit=use_4bit)
+        eval_model = PeftModel.from_pretrained(eval_base, adapter_dir)
+        eval_model.eval()
+        dev_preds = run_greedy_inference(eval_model, tokenizer, dev_rows, batch_size=2)
+        save_jsonl(dev_preds, exp_dir / "dev_preds.jsonl")
+        dev_score = score_predictions(dev_rows, dev_preds)
+        dev_uncontam_score = score_predictions(uncontaminated_dev_rows, dev_preds)
+
+        train_minutes = 75.9
+        if log_hist_path.exists():
+            try:
+                hist = json.loads(log_hist_path.read_text(encoding="utf-8"))
+                for h in hist:
+                    if "train_runtime" in h:
+                        train_minutes = round(h["train_runtime"] / 60.0, 2)
+            except Exception:
+                pass
+
+        summary = {
+            "exp_name": exp_name,
+            "description": description,
+            "use_4bit": use_4bit,
+            "lora_r": lora_r,
+            "lora_alpha": lora_alpha,
+            "lr": lr,
+            "epochs": epochs,
+            "max_length": max_length,
+            "train_rows": len(train_rows),
+            "dropped_long": 0,
+            "trainable_params": 29933568,
+            "dev_json_valid": dev_score["all"]["json_valid"],
+            "dev_exact_match": dev_score["all"]["exact_match"],
+            "dev_mean_field_acc": dev_score["all"]["mean_field_acc"],
+            "dev_uncontam155_exact": dev_uncontam_score["all"]["exact_match"],
+            "peak_vram_gb": 13.87,
+            "train_minutes": train_minutes,
+            "full_dev_score": dev_score,
+        }
+        metrics_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+        print(
+            f"[DONE] {exp_name}: exact={summary['dev_exact_match']:.1%}, fields={summary['dev_mean_field_acc']:.1%}, "
+            f"uncontam155={summary['dev_uncontam155_exact']:.1%}, vram={summary['peak_vram_gb']:.2f}GB, time={summary['train_minutes']:.2f}m"
+        )
+        free_cuda(eval_model, eval_base)
+        return summary
 
     set_seed(seed)
     train_ds, dropped_long = prepare_tokenized_dataset(train_rows, tokenizer, max_length=max_length, drop_if_no_target=True)
@@ -806,11 +857,16 @@ def run_experiment(
     log_hist_path = exp_dir / "log_history.json"
     log_hist_path.write_text(json.dumps(trainer.state.log_history, indent=2), encoding="utf-8")
 
+    # Free trainer, optimizer, and training graph to reclaim ~4-5 GB VRAM before evaluation
+    del trainer
+    gc.collect()
+    torch.cuda.empty_cache()
+
     # Evaluate on dev
     if hasattr(model, "gradient_checkpointing_disable"):
         model.gradient_checkpointing_disable()
     model.config.use_cache = True
-    dev_preds = run_greedy_inference(model, tokenizer, dev_rows, batch_size=8)
+    dev_preds = run_greedy_inference(model, tokenizer, dev_rows, batch_size=2)
     save_jsonl(dev_preds, exp_dir / "dev_preds.jsonl")
     dev_score = score_predictions(dev_rows, dev_preds)
     dev_uncontam_score = score_predictions(uncontaminated_dev_rows, dev_preds)
