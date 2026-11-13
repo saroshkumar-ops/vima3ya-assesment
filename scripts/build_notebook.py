@@ -759,7 +759,7 @@ def run_experiment(
         num_train_epochs=epochs,
         lr_scheduler_type="cosine",
         warmup_steps=15,
-        fp16=True,
+        fp16=False,
         bf16=False,
         optim="adamw_torch",
         gradient_checkpointing=True,
