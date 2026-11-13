@@ -654,14 +654,14 @@ else:
     base_model = load_base_model(use_4bit=False)
 
     t0 = time.time()
-    b1_preds = run_greedy_inference(base_model, tokenizer, dev_rows, batch_size=8)
+    b1_preds = run_greedy_inference(base_model, tokenizer, dev_rows, batch_size=2)
     save_jsonl(b1_preds, baseline_dir / "baseline1_dev_preds.jsonl")
     b1_res = score_predictions(dev_rows, b1_preds)
     b1_path.write_text(json.dumps(b1_res, indent=2), encoding="utf-8")
     print(f"Baseline 1 completed in {(time.time()-t0)/60:.2f} min")
 
     t0 = time.time()
-    b2_preds = run_greedy_inference(base_model, tokenizer, dev_rows, batch_size=8, system_override=RULES_SYSTEM_PROMPT)
+    b2_preds = run_greedy_inference(base_model, tokenizer, dev_rows, batch_size=2, system_override=RULES_SYSTEM_PROMPT)
     save_jsonl(b2_preds, baseline_dir / "baseline2_dev_preds.jsonl")
     b2_res = score_predictions(dev_rows, b2_preds)
     b2_path.write_text(json.dumps(b2_res, indent=2), encoding="utf-8")
@@ -714,6 +714,7 @@ def run_experiment(
     exp_dir.mkdir(parents=True, exist_ok=True)
     metrics_path = exp_dir / "metrics.json"
     adapter_dir = exp_dir / "adapter"
+    log_hist_path = exp_dir / "log_history.json"
 
     if SKIP_COMPLETED and (adapter_dir / "adapter_config.json").exists():
         if metrics_path.exists():
@@ -897,7 +898,7 @@ def run_experiment(
         f"uncontam155={summary['dev_uncontam155_exact']:.1%}, vram={summary['peak_vram_gb']:.2f}GB, time={summary['train_minutes']:.2f}m"
     )
 
-    free_cuda(trainer, model)
+    free_cuda(model)
     return summary"""
         )
     )
