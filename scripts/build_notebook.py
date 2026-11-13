@@ -765,7 +765,6 @@ def run_experiment(
         optim="adamw_torch",
         gradient_checkpointing=True,
         gradient_checkpointing_kwargs={"use_reentrant": False},
-        group_by_length=True,
         eval_strategy="epoch",
         save_strategy="no",
         logging_steps=20,
@@ -774,12 +773,16 @@ def run_experiment(
         seed=seed,
     )
     sft_sig = inspect.signature(SFTConfig.__init__).parameters
+    has_var_kw = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sft_sig.values())
     if "max_length" in sft_sig:
         sft_kwargs["max_length"] = max_length
     elif "max_seq_length" in sft_sig:
         sft_kwargs["max_seq_length"] = max_length
     if "dataset_kwargs" in sft_sig:
         sft_kwargs["dataset_kwargs"] = {"skip_prepare_dataset": True}
+
+    if not has_var_kw:
+        sft_kwargs = {k: v for k, v in sft_kwargs.items() if k in sft_sig}
 
     trainer_kwargs = dict(
         model=model,
