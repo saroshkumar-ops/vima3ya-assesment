@@ -740,8 +740,7 @@ def run_experiment(
         task_type="CAUSAL_LM",
         target_modules=target_modules,
     )
-    model = get_peft_model(model, lora_cfg, autocast_adapter_dtype=False)
-    # Keep trainable LoRA weights in fp32 so AMP fp16 GradScaler never fails unscaling
+    model = get_peft_model(model, lora_cfg)
     for p in model.parameters():
         if p.requires_grad:
             p.data = p.data.float()
